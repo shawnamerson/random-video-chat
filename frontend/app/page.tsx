@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
-import type { Socket } from "socket.io-client";
+
+type SocketType = ReturnType<typeof io>;
 
 export default function HomePage() {
   const localVidRef = useRef<HTMLVideoElement>(null);
@@ -14,7 +15,7 @@ export default function HomePage() {
   const [canNext, setCanNext] = useState(false);
 
   // RTC & signaling
-  const [socket, setSocket] = useState<typeof Socket>();
+  const [socket, setSocket] = useState<SocketType>();
   const [pc, setPc] = useState<RTCPeerConnection>();
   const [peerId, setPeerId] = useState<string>();
   const [initiator, setInitiator] = useState(false);
@@ -42,12 +43,10 @@ export default function HomePage() {
   // Start or stop auto-connecting
   const toggleRun = () => {
     if (isRunning) {
-      // Stop
       setIsRunning(false);
       disconnect();
       setStatus("Stopped");
     } else {
-      // Start
       setIsRunning(true);
       setStatus("Initializing…");
       reconnect();
@@ -56,18 +55,15 @@ export default function HomePage() {
 
   // One-time setup: socket + getUserMedia
   useEffect(() => {
-    // Use a relative endpoint so in production it connects to
-    // wss://<your-domain>/socket.io, and in dev Next.js rewrites to localhost:4000
-    const s: typeof Socket = io({
+    const s = io({
       transports: ["websocket"],
       path: "/socket.io",
     });
     setSocket(s);
 
     s.on("connect", () => console.log("🟢 connected as", s.id));
-    s.on("connect_error", (err) => console.error("❌ conn error", err));
+    s.on("connect_error", (err: any) => console.error("❌ conn error", err));
 
-    // grab camera/mic once
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
       .then((stream) => {
@@ -75,7 +71,7 @@ export default function HomePage() {
           localVidRef.current.srcObject = stream;
         }
       })
-      .catch((err) => setStatus("⚠️ Camera/Mic error: " + err.message));
+      .catch((err: any) => setStatus("⚠️ Camera/Mic error: " + err.message));
 
     return () => {
       s.disconnect();
@@ -92,58 +88,77 @@ export default function HomePage() {
       setCanNext(false);
     });
 
-    socket.on("paired", async ({ peerId, initiator }) => {
-      setPeerId(peerId);
-      setInitiator(initiator);
-      setStatus(
-        "✅ Paired! " + (initiator ? "Sending offer…" : "Awaiting offer…")
-      );
-      setCanNext(true);
+    socket.on(
+      "paired",
+      async ({
+        peerId: id,
+        initiator: init,
+      }: {
+        peerId: string;
+        initiator: boolean;
+      }) => {
+        setPeerId(id);
+        setInitiator(init);
+        setStatus(
+          "✅ Paired! " + (init ? "Sending offer…" : "Awaiting offer…")
+        );
+        setCanNext(true);
 
-      const connection = new RTCPeerConnection(pcConfig);
-      setPc(connection);
+        const connection = new RTCPeerConnection(pcConfig);
+        setPc(connection);
 
-      // add local tracks
-      const localStream = localVidRef.current!.srcObject as MediaStream;
-      localStream
-        .getTracks()
-        .forEach((track) => connection.addTrack(track, localStream));
+        const localStream = localVidRef.current!.srcObject as MediaStream;
+        localStream
+          .getTracks()
+          .forEach((track) => connection.addTrack(track, localStream));
 
-      connection.onicecandidate = ({ candidate }) => {
-        if (candidate) socket.emit("signal", { peerId, signal: { candidate } });
-      };
-      connection.ontrack = ({ streams: [stream] }) => {
-        if (remoteVidRef.current) {
-          remoteVidRef.current.srcObject = stream;
-        }
-      };
+        connection.onicecandidate = ({ candidate }) => {
+          if (candidate)
+            socket.emit("signal", { peerId: id, signal: { candidate } });
+        };
+        connection.ontrack = ({ streams: [stream] }) => {
+          if (remoteVidRef.current) {
+            remoteVidRef.current.srcObject = stream;
+          }
+        };
 
-      if (initiator) {
-        const offer = await connection.createOffer();
-        await connection.setLocalDescription(offer);
-        socket.emit("signal", {
-          peerId,
-          signal: { sdp: connection.localDescription! },
-        });
-      }
-    });
-
-    socket.on("signal", async ({ signal }) => {
-      if (!pc) return;
-      if (signal.sdp) {
-        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-        if (signal.sdp.type === "offer") {
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
+        if (init) {
+          const offer = await connection.createOffer();
+          await connection.setLocalDescription(offer);
           socket.emit("signal", {
-            peerId,
-            signal: { sdp: pc.localDescription! },
+            peerId: id,
+            signal: { sdp: connection.localDescription! },
           });
         }
-      } else if (signal.candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
       }
-    });
+    );
+
+    socket.on(
+      "signal",
+      async (payload: {
+        peerId: string;
+        signal: {
+          sdp?: RTCSessionDescriptionInit;
+          candidate?: RTCIceCandidateInit;
+        };
+      }) => {
+        const { peerId: id, signal } = payload;
+        if (!pc) return;
+        if (signal.sdp) {
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          if (signal.sdp.type === "offer") {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit("signal", {
+              peerId: id,
+              signal: { sdp: pc.localDescription! },
+            });
+          }
+        } else if (signal.candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        }
+      }
+    );
 
     socket.on("partner-disconnected", () => {
       setStatus(
@@ -159,7 +174,7 @@ export default function HomePage() {
       socket.off("signal");
       socket.off("partner-disconnected");
     };
-  }, [socket, pc, peerId, initiator, isRunning]);
+  }, [socket, pc, isRunning]);
 
   return (
     <main style={{ textAlign: "center", padding: "1rem" }}>
