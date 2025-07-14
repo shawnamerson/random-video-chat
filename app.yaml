@@ -1,0 +1,30 @@
+name: random-video-chat
+region: nyc1
+
+services:
+  - name: signaling
+    github:
+      repo: shawnamerson/random-video-chat
+      branch: main
+    source_dir: server
+    dockerfile_path: server/Dockerfile
+    http_port: 4000
+    instance_size_slug: basic-xs
+    instance_count: 1
+    routes:
+      - path: /socket.io/*
+        preserve_path_prefix: true
+
+  - name: frontend
+    github:
+      repo: shawnamerson/random-video-chat
+      branch: main
+    source_dir: frontend
+    dockerfile_path: frontend/Dockerfile.prod
+    http_port: 3000
+    instance_size_slug: basic-xs
+    instance_count: 1
+    routes:
+      - path: /
+
+# (omit the self-hosted Redis service or managed DB block if you’ve already attached one)
