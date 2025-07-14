@@ -1,3 +1,4 @@
+// server/server.js
 const express       = require('express');
 const http          = require('http');
 const path          = require('path');
@@ -18,18 +19,25 @@ const io = new Server(server, {
 });
 
 // ─── Redis Adapter Setup ──────────────────────────────────────────────────────
-const redisUrl  = process.env.REDIS_URL || 'redis://localhost:6379';
-const pubClient = createClient({ url: redisUrl });
-const subClient = pubClient.duplicate();
+// In dev, default to localhost. In prod, require REDIS_URL to be set.
+const redisUrlDev = 'redis://localhost:6379';
+const redisUrl = process.env.REDIS_URL || (process.env.NODE_ENV === 'development' ? redisUrlDev : null);
 
-;(async () => {
-  await pubClient.connect();
-  await subClient.connect();
-  io.adapter(createAdapter(pubClient, subClient));
-  console.log('🗄️  Redis adapter connected');
-})().catch(err => {
-  console.error('🔴 Redis connection error:', err);
-});
+if (redisUrl) {
+  const pubClient = createClient({ url: redisUrl });
+  const subClient = pubClient.duplicate();
+
+  ;(async () => {
+    await pubClient.connect();
+    await subClient.connect();
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log('🗄️  Redis adapter connected to', redisUrl);
+  })().catch(err => {
+    console.error('🔴 Redis connection error:', err);
+  });
+} else {
+  console.warn('⚠️ REDIS_URL not set; running without Redis adapter (in-memory only)');
+}
 
 // ─── Static Assets (if any) ───────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
