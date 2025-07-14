@@ -1,0 +1,22 @@
+# 1) Build stage
+FROM node:18-alpine AS builder
+WORKDIR /app
+
+# Install deps and compile
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+# 2) Production stage
+FROM node:18-alpine
+WORKDIR /app
+
+# Copy built output and runtime deps
+COPY --from=builder /app ./
+
+# Expose the port Next.js will run on
+EXPOSE 3000
+
+# Start the Next.js server
+CMD ["npm", "start"]
