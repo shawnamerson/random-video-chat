@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
-import type { Socket as SocketType } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 
 export default function HomePage() {
   const localVidRef = useRef<HTMLVideoElement>(null);
@@ -14,10 +14,10 @@ export default function HomePage() {
   const [canNext, setCanNext] = useState(false);
 
   // RTC & signaling
-  const [socket, setSocket] = useState<typeof SocketType>();
+  const [socket, setSocket] = useState<typeof Socket>();
+  const [pc, setPc] = useState<RTCPeerConnection>();
   const [peerId, setPeerId] = useState<string>();
   const [initiator, setInitiator] = useState(false);
-  const [pc, setPc] = useState<RTCPeerConnection | undefined>();
 
   // Tear down current call
   const disconnect = () => {
@@ -58,7 +58,7 @@ export default function HomePage() {
   useEffect(() => {
     // Use a relative endpoint so in production it connects to
     // wss://<your-domain>/socket.io, and in dev Next.js rewrites to localhost:4000
-    const s: typeof SocketType = io({
+    const s: typeof Socket = io({
       transports: ["websocket"],
       path: "/socket.io",
     });
