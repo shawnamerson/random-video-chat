@@ -1,4 +1,13 @@
 // server/server.js
+
+// Add this block to the very top of your file to catch all unhandled errors
+process.on('uncaughtException', err => {
+  console.error('There was an uncaught error:', err);
+  // This is a mandatory (as per the Node.js docs) step to prevent
+  // the process from staying in a corrupted state.
+  process.exit(1); 
+});
+
 const express       = require('express');
 const http          = require('http');
 const path          = require('path');
@@ -44,7 +53,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Pairing Logic ────────────────────────────────────────────────────────────
 let waitingSocket = null;
-const pairs = {};  // socket.id → peerId
+const pairs = {};   // socket.id → peerId
 
 io.on('connection', socket => {
   console.log(`🔌 ${socket.id} connected`);
