@@ -20,9 +20,9 @@ const pubClient = createClient({ url: redisUrl });
 const subClient = pubClient.duplicate();
 
 ;(async () => {
- // await pubClient.connect();
- // await subClient.connect();
- // io.adapter(createAdapter(pubClient, subClient));
+ await pubClient.connect();
+ await subClient.connect();
+  io.adapter(createAdapter(pubClient, subClient));
   console.log('🗄️  Redis adapter connected');
 })().catch(err => {
   console.error('🔴 Redis connection error:', err);
