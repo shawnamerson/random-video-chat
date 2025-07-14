@@ -11,13 +11,18 @@ services:
     http_port: 4000
     instance_size_slug: basic-xs
     instance_count: 1
+
+    # make sure this is indented under signaling:
     environment_variables:
-      REDIS_URL: redis-16761.c273.us-east-1-2.ec2.redns.redis-cloud.com:16761
+      REDIS_URL: "redis://redis-16761.c273.us-east-1-2.ec2.redns.redis-cloud.com:16761"
       FRONTEND_ORIGIN: "https://sea-lion-app-3d7da.ondigitalocean.app"
+
     routes:
+      # match both the exact path and anything under it
+      - path: /socket.io
+        preserve_path_prefix: true
       - path: /socket.io/*
         preserve_path_prefix: true
-        websocket: true
 
   - name: frontend
     github:
