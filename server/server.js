@@ -7,9 +7,12 @@ const { createAdapter } = require('@socket.io/redis-adapter');
 
 const app    = express();
 const server = http.createServer(app);
-const io     = new Server(server, {
+
+// Allow your production frontend origin (or default to localhost for dev)
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
+const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: FRONTEND_ORIGIN,
     methods: ['GET','POST']
   }
 });
@@ -20,8 +23,8 @@ const pubClient = createClient({ url: redisUrl });
 const subClient = pubClient.duplicate();
 
 ;(async () => {
- await pubClient.connect();
- await subClient.connect();
+  await pubClient.connect();
+  await subClient.connect();
   io.adapter(createAdapter(pubClient, subClient));
   console.log('🗄️  Redis adapter connected');
 })().catch(err => {
