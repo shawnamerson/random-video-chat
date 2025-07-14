@@ -55,7 +55,9 @@ export default function HomePage() {
 
   // One-time setup: socket + getUserMedia
   useEffect(() => {
-    const s: Socket = io('http://localhost:4000', {
+    // Use a relative endpoint so in production it connects to
+    // wss://<your-domain>/socket.io, and in dev Next.js rewrites to localhost:4000
+    const s: Socket = io({
       transports: ['websocket'],
       path: '/socket.io',
     });
@@ -116,7 +118,7 @@ export default function HomePage() {
       if (initiator) {
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
-        socket.emit('signal', { peerId, signal: { sdp: connection.localDescription } });
+        socket.emit('signal', { peerId, signal: { sdp: connection.localDescription! } });
       }
     });
 
@@ -127,7 +129,7 @@ export default function HomePage() {
         if (signal.sdp.type === 'offer') {
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          socket.emit('signal', { peerId, signal: { sdp: pc.localDescription } });
+          socket.emit('signal', { peerId, signal: { sdp: pc.localDescription! } });
         }
       } else if (signal.candidate) {
         await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
@@ -174,12 +176,15 @@ export default function HomePage() {
       <div>
         <video
           ref={localVidRef}
-          autoPlay muted playsInline
+          autoPlay
+          muted
+          playsInline
           style={{ width: '45%', margin: '0 2%', background: '#000' }}
         />
         <video
           ref={remoteVidRef}
-          autoPlay playsInline
+          autoPlay
+          playsInline
           style={{ width: '45%', margin: '0 2%', background: '#000' }}
         />
       </div>
