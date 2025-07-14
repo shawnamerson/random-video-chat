@@ -19,11 +19,20 @@ const app    = express();
 const server = http.createServer(app);
 
 // Allow your production frontend origin (or default to localhost for dev)
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
+//const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
+//const io = new Server(server, {
+ // cors: {
+  //  origin: FRONTEND_ORIGIN,
+  //  methods: ['GET','POST']
+ // }
+//});
+
+// 🔓 For debugging only: allow ALL origins
 const io = new Server(server, {
   cors: {
-    origin: FRONTEND_ORIGIN,
-    methods: ['GET','POST']
+    origin: '*',
+    methods: ['GET','POST'],
+    credentials: true
   }
 });
 
