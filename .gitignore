@@ -1,0 +1,11 @@
+# ignore any root-level node_modules or lockfiles
+/node_modules
+/package-lock.json
+
+# Next.js build artifacts
+/frontend/.next
+/frontend/out
+
+# VSCode, Mac, etc.
+.DS_Store
+*.log
