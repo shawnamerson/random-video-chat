@@ -100,8 +100,7 @@ export default function Home() {
   const nextStranger = () => {
     teardownPeer();
     setStatus("⏳ Finding the next partner…");
-    socketRef.current?.emit("leave");
-    socketRef.current?.emit("join");
+    socketRef.current?.emit("next");
   };
 
   const stopMatching = () => {
