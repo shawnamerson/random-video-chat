@@ -16,9 +16,13 @@ export default function Home() {
   const [stopEnabled, setStopEnabled] = useState(false);
   const [actionDisabled, setActionDisabled] = useState(false);
 
-  // Matching state (and a ref mirror to avoid stale closures)
+  // Matching state
   const [matchingActive, setMatchingActive] = useState(false);
   const matchingRef = useRef(false);
+
+  // Connection sequencing (prevents stale events during Next)
+  const sessionRef = useRef(0); // increments on Start/Next/Stop
+  const nextInFlightRef = useRef(false);
 
   // ICE / WebRTC
   const [pcConfig, setPcConfig] = useState<IceConfig>({
@@ -53,6 +57,7 @@ export default function Home() {
     const pc = new RTCPeerConnection(pcConfig);
     const stream = streamRef.current;
     if (stream) stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+
     pc.onicecandidate = ({ candidate }) => {
       if (candidate && socketRef.current && peerIdRef.current) {
         socketRef.current.emit("signal", {
@@ -82,6 +87,7 @@ export default function Home() {
 
   // Actions
   const startMatching = () => {
+    sessionRef.current += 1;
     setMatchingActive(true);
     matchingRef.current = true;
 
@@ -92,20 +98,55 @@ export default function Home() {
     socketRef.current?.emit("join");
   };
 
-  // one-click next: leave → teardown → join
+  // Prefer server "next" with ack; fallback to leave→join if unsupported.
   const nextStranger = () => {
+    if (nextInFlightRef.current) return;
+    nextInFlightRef.current = true;
     setActionDisabled(true);
-    socketRef.current?.emit("leave");
+
+    // bump session so any late events from the old pairing are ignored
+    const mySession = ++sessionRef.current;
+
+    // local cleanup first (prevents ICE leaks & stale ontrack firing)
     teardownPeer();
     setStatus("⏳ Finding the next partner…");
-    setTimeout(() => {
-      if (matchingRef.current) socketRef.current?.emit("join");
-    }, 50);
+
+    let acked = false;
+    let ackTimer: number | undefined;
+
+    try {
+      socketRef.current
+        ?.timeout(300)
+        .emit("next", (err: unknown, ok?: boolean) => {
+          if (mySession !== sessionRef.current) return;
+          acked = true;
+          if (ackTimer) clearTimeout(ackTimer);
+          // If server handled "next", nothing else to do; we’ll get "waiting" or "paired".
+          nextInFlightRef.current = false;
+        });
+    } catch {
+      // ignore; we’ll fall back
+    }
+
+    // Fallback if server doesn't implement "next"
+    // small delay lets server process any in-flight pair teardown
+    ackTimer = window.setTimeout(() => {
+      if (mySession !== sessionRef.current) return;
+      if (acked) return;
+      socketRef.current?.emit("leave");
+      setTimeout(() => {
+        if (mySession !== sessionRef.current || !matchingRef.current) return;
+        socketRef.current?.emit("join");
+        nextInFlightRef.current = false;
+      }, 120);
+    }, 180) as unknown as number;
   };
 
   const stopMatching = () => {
+    sessionRef.current += 1;
     setMatchingActive(false);
     matchingRef.current = false;
+    nextInFlightRef.current = false;
 
     setActionLabel("Start");
     setStopEnabled(false);
@@ -121,8 +162,10 @@ export default function Home() {
     else nextStranger();
   };
 
+  // Boot: media + socket wiring
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       await loadIce();
 
@@ -158,6 +201,7 @@ export default function Home() {
       socket.on("connect_error", () =>
         setStatus("⚠️ Connection issue. Retrying…")
       );
+
       socket.on("waiting", () => {
         if (!matchingRef.current) return;
         setStatus("⏳ Waiting for a partner…");
@@ -173,23 +217,39 @@ export default function Home() {
           peerId: string;
           initiator: boolean;
         }) => {
+          // Ignore stale pair events from a previous session (e.g., during Next)
           if (!matchingRef.current) {
             socket.emit("leave");
             return;
           }
+
+          // If we somehow get paired while a peer exists (race), reset cleanly
+          if (
+            pcRef.current &&
+            peerIdRef.current &&
+            peerIdRef.current !== peerId
+          ) {
+            teardownPeer();
+          }
+
           peerIdRef.current = peerId;
           setStatus(
             "✅ Paired! " + (initiator ? "Sending offer…" : "Awaiting offer…")
           );
+
           buildPeer();
+
           if (initiator && pcRef.current) {
-            const offer = await pcRef.current.createOffer();
-            await pcRef.current.setLocalDescription(offer);
-            socket.emit("signal", {
-              peerId,
-              signal: { sdp: pcRef.current.localDescription },
-            });
+            try {
+              const offer = await pcRef.current.createOffer();
+              await pcRef.current.setLocalDescription(offer);
+              socket.emit("signal", {
+                peerId,
+                signal: { sdp: pcRef.current.localDescription },
+              });
+            } catch {}
           }
+
           setActionDisabled(false);
         }
       );
@@ -206,29 +266,43 @@ export default function Home() {
             candidate?: RTCIceCandidateInit;
           };
         }) => {
+          // Drop signals that arrive after we’ve moved to a new session
+          if (!matchingRef.current) return;
+
           if (!pcRef.current) {
-            if (!matchingRef.current) return;
+            // Late-first signal: build peer lazily
             peerIdRef.current = peerId;
             buildPeer();
           }
-          if (signal.sdp && pcRef.current) {
-            await pcRef.current.setRemoteDescription(
-              new RTCSessionDescription(signal.sdp)
-            );
-            if (signal.sdp.type === "offer") {
-              const answer = await pcRef.current.createAnswer();
-              await pcRef.current.setLocalDescription(answer);
-              socketRef.current?.emit("signal", {
-                peerId: peerIdRef.current,
-                signal: { sdp: pcRef.current.localDescription },
-              });
+
+          if (!pcRef.current) return;
+
+          if (signal.sdp) {
+            try {
+              await pcRef.current.setRemoteDescription(
+                new RTCSessionDescription(signal.sdp)
+              );
+              if (signal.sdp.type === "offer") {
+                const answer = await pcRef.current.createAnswer();
+                await pcRef.current.setLocalDescription(answer);
+                socketRef.current?.emit("signal", {
+                  peerId: peerIdRef.current,
+                  signal: { sdp: pcRef.current.localDescription },
+                });
+              }
+            } catch {
+              // If we hit an SDP error mid-swap, reset and requeue
+              teardownPeer();
+              if (matchingRef.current) socketRef.current?.emit("join");
             }
-          } else if (signal.candidate && pcRef.current) {
+          } else if (signal.candidate) {
             try {
               await pcRef.current.addIceCandidate(
                 new RTCIceCandidate(signal.candidate)
               );
-            } catch {}
+            } catch {
+              // ignore ICE races
+            }
           }
         }
       );
@@ -237,8 +311,9 @@ export default function Home() {
         teardownPeer();
         if (matchingRef.current) {
           setStatus("⚠️ Stranger left. ⏳ Finding the next partner…");
+          // requeue safely
           socket.emit("leave");
-          setTimeout(() => matchingRef.current && socket.emit("join"), 50);
+          setTimeout(() => matchingRef.current && socket.emit("join"), 120);
         } else {
           setStatus("⚠️ Stranger left.");
         }
@@ -351,8 +426,8 @@ export default function Home() {
             display: flex;
           }
           .controls-overlay {
-            display: none;
-          } /* hide overlay on larger screens */
+            display: none; /* hide overlay on larger screens */
+          }
         }
 
         button {
