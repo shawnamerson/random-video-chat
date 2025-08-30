@@ -309,7 +309,29 @@ export default function Home() {
           margin: 8px 0 16px;
         }
 
-        /* Layout: vertical stack by default (mobile) */
+        /* Inline controls above videos (desktop) */
+        .controls-inline {
+          display: none; /* hidden on mobile */
+          gap: 12px;
+          margin: 12px 0;
+        }
+
+        /* Overlay controls on mobile */
+        .controls-overlay {
+          position: absolute;
+          inset: auto 0 12px 0;
+          display: flex;
+          justify-content: center;
+          gap: 12px;
+          padding: 8px 0;
+        }
+        .controls-overlay button {
+          background: rgba(255, 255, 255, 0.92);
+          border: 0;
+          border-radius: 999px;
+          padding: 10px 16px;
+        }
+
         .videos {
           display: grid;
           grid-template-columns: 1fr;
@@ -328,28 +350,7 @@ export default function Home() {
           max-width: 720px;
         }
 
-        /* Controls */
-        .controls-inline {
-          display: none; /* hidden on mobile */
-          gap: 12px;
-          margin: 12px 0;
-        }
-        .controls-overlay {
-          position: absolute; /* overlay on remote video (mobile) */
-          inset: auto 0 12px 0;
-          display: flex;
-          justify-content: center;
-          gap: 12px;
-          padding: 8px 0;
-        }
-        .controls-overlay button {
-          background: rgba(255, 255, 255, 0.92);
-          border: 0;
-          border-radius: 999px;
-          padding: 10px 16px;
-        }
-
-        /* Desktop/tablet: side-by-side videos, inline controls; hide overlay */
+        /* Desktop/tablet: side-by-side videos, inline controls */
         @media (min-width: 768px) {
           .videos {
             grid-template-columns: 1fr 1fr;
