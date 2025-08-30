@@ -12,17 +12,12 @@ export default function Home() {
   const remoteRef = useRef<HTMLVideoElement>(null);
 
   // UI state
-  const [actionLabel, setActionLabel] = useState<"Start" | "Next">("Start");
+  const [actionLabel, setActionLabel] = useState("Start"); // Start -> Next
   const [stopEnabled, setStopEnabled] = useState(false);
-  const [actionDisabled, setActionDisabled] = useState(false);
 
-  // Matching state
+  // Matching state (and a ref mirror to avoid stale closures)
   const [matchingActive, setMatchingActive] = useState(false);
   const matchingRef = useRef(false);
-
-  // Connection sequencing (prevents stale events during Next)
-  const sessionRef = useRef(0); // increments on Start/Next/Stop
-  const nextInFlightRef = useRef(false);
 
   // ICE / WebRTC
   const [pcConfig, setPcConfig] = useState<IceConfig>({
@@ -56,8 +51,9 @@ export default function Home() {
   const buildPeer = () => {
     const pc = new RTCPeerConnection(pcConfig);
     const stream = streamRef.current;
-    if (stream) stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-
+    if (stream) {
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+    }
     pc.onicecandidate = ({ candidate }) => {
       if (candidate && socketRef.current && peerIdRef.current) {
         socketRef.current.emit("signal", {
@@ -75,89 +71,50 @@ export default function Home() {
     pcRef.current = pc;
   };
 
+  // Load ICE from Next API (falls back to STUN-only if it fails)
   const loadIce = async () => {
     try {
       const r = await fetch("/api/ice", { cache: "no-store" });
       if (r.ok) {
         const cfg = (await r.json()) as IceConfig;
-        if (cfg && Array.isArray(cfg.iceServers)) setPcConfig(cfg);
+        if (cfg && Array.isArray(cfg.iceServers)) {
+          setPcConfig(cfg);
+          return;
+        }
       }
     } catch {}
+    // keep default STUN-only config on failure
   };
 
   // Actions
   const startMatching = () => {
-    sessionRef.current += 1;
     setMatchingActive(true);
     matchingRef.current = true;
 
     setActionLabel("Next");
     setStopEnabled(true);
-    setActionDisabled(true);
     setStatus("⏳ Looking for a partner…");
     socketRef.current?.emit("join");
   };
 
-  // Prefer server "next" with ack; fallback to leave→join if unsupported.
   const nextStranger = () => {
-    if (nextInFlightRef.current) return;
-    nextInFlightRef.current = true;
-    setActionDisabled(true);
-
-    // bump session so any late events from the old pairing are ignored
-    const mySession = ++sessionRef.current;
-
-    // local cleanup first (prevents ICE leaks & stale ontrack firing)
     teardownPeer();
     setStatus("⏳ Finding the next partner…");
-
-    let acked = false;
-    let ackTimer: number | undefined;
-
-    try {
-      socketRef.current
-        ?.timeout(300)
-        .emit("next", (err: unknown, ok?: boolean) => {
-          if (mySession !== sessionRef.current) return;
-          acked = true;
-          if (ackTimer) clearTimeout(ackTimer);
-          // If server handled "next", nothing else to do; we’ll get "waiting" or "paired".
-          nextInFlightRef.current = false;
-        });
-    } catch {
-      // ignore; we’ll fall back
-    }
-
-    // Fallback if server doesn't implement "next"
-    // small delay lets server process any in-flight pair teardown
-    ackTimer = window.setTimeout(() => {
-      if (mySession !== sessionRef.current) return;
-      if (acked) return;
-      socketRef.current?.emit("leave");
-      setTimeout(() => {
-        if (mySession !== sessionRef.current || !matchingRef.current) return;
-        socketRef.current?.emit("join");
-        nextInFlightRef.current = false;
-      }, 120);
-    }, 180) as unknown as number;
+    socketRef.current?.emit("next");
   };
 
   const stopMatching = () => {
-    sessionRef.current += 1;
     setMatchingActive(false);
     matchingRef.current = false;
-    nextInFlightRef.current = false;
 
     setActionLabel("Start");
     setStopEnabled(false);
-    setActionDisabled(false);
     teardownPeer();
     socketRef.current?.emit("leave");
     setStatus("Stopped. Click Start when you’re ready.");
   };
 
   const onAction = () => {
-    if (actionDisabled) return;
     if (!matchingRef.current) startMatching();
     else nextStranger();
   };
@@ -169,28 +126,35 @@ export default function Home() {
     (async () => {
       await loadIce();
 
+      // Get user media immediately (preview)
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true,
         });
         streamRef.current = stream;
+
         if (localRef.current) {
           localRef.current.srcObject = stream;
           localRef.current.muted = true;
           localRef.current.playsInline = true;
           await localRef.current.play().catch(() => {});
         }
-        if (!cancelled)
+
+        if (!cancelled) {
           setStatus("Ready. Click Start to connect with a stranger.");
+        }
       } catch (e) {
         setStatus(
           "❌ Camera/Mic error: " + (e instanceof Error ? e.message : String(e))
         );
       }
 
+      // Connect to signaling server (WebSocket-only)
       const url = process.env.NEXT_PUBLIC_SIGNAL_URL;
-      if (!url) console.error("Missing NEXT_PUBLIC_SIGNAL_URL");
+      if (!url) {
+        console.error("Missing NEXT_PUBLIC_SIGNAL_URL");
+      }
       const socket = io(url as string, {
         transports: ["websocket"],
         upgrade: false,
@@ -198,6 +162,7 @@ export default function Home() {
       });
       socketRef.current = socket;
 
+      socket.on("connect", () => console.log("✅ socket connected", socket.id));
       socket.on("connect_error", () =>
         setStatus("⚠️ Connection issue. Retrying…")
       );
@@ -205,7 +170,6 @@ export default function Home() {
       socket.on("waiting", () => {
         if (!matchingRef.current) return;
         setStatus("⏳ Waiting for a partner…");
-        setActionDisabled(false);
       });
 
       socket.on(
@@ -217,22 +181,12 @@ export default function Home() {
           peerId: string;
           initiator: boolean;
         }) => {
-          // Ignore stale pair events from a previous session (e.g., during Next)
           if (!matchingRef.current) {
             socket.emit("leave");
             return;
           }
-
-          // If we somehow get paired while a peer exists (race), reset cleanly
-          if (
-            pcRef.current &&
-            peerIdRef.current &&
-            peerIdRef.current !== peerId
-          ) {
-            teardownPeer();
-          }
-
           peerIdRef.current = peerId;
+
           setStatus(
             "✅ Paired! " + (initiator ? "Sending offer…" : "Awaiting offer…")
           );
@@ -240,17 +194,13 @@ export default function Home() {
           buildPeer();
 
           if (initiator && pcRef.current) {
-            try {
-              const offer = await pcRef.current.createOffer();
-              await pcRef.current.setLocalDescription(offer);
-              socket.emit("signal", {
-                peerId,
-                signal: { sdp: pcRef.current.localDescription },
-              });
-            } catch {}
+            const offer = await pcRef.current.createOffer();
+            await pcRef.current.setLocalDescription(offer);
+            socket.emit("signal", {
+              peerId,
+              signal: { sdp: pcRef.current.localDescription },
+            });
           }
-
-          setActionDisabled(false);
         }
       );
 
@@ -266,42 +216,30 @@ export default function Home() {
             candidate?: RTCIceCandidateInit;
           };
         }) => {
-          // Drop signals that arrive after we’ve moved to a new session
-          if (!matchingRef.current) return;
-
           if (!pcRef.current) {
-            // Late-first signal: build peer lazily
+            if (!matchingRef.current) return;
             peerIdRef.current = peerId;
             buildPeer();
           }
-
-          if (!pcRef.current) return;
-
-          if (signal.sdp) {
-            try {
-              await pcRef.current.setRemoteDescription(
-                new RTCSessionDescription(signal.sdp)
-              );
-              if (signal.sdp.type === "offer") {
-                const answer = await pcRef.current.createAnswer();
-                await pcRef.current.setLocalDescription(answer);
-                socketRef.current?.emit("signal", {
-                  peerId: peerIdRef.current,
-                  signal: { sdp: pcRef.current.localDescription },
-                });
-              }
-            } catch {
-              // If we hit an SDP error mid-swap, reset and requeue
-              teardownPeer();
-              if (matchingRef.current) socketRef.current?.emit("join");
+          if (signal.sdp && pcRef.current) {
+            await pcRef.current.setRemoteDescription(
+              new RTCSessionDescription(signal.sdp)
+            );
+            if (signal.sdp.type === "offer") {
+              const answer = await pcRef.current.createAnswer();
+              await pcRef.current.setLocalDescription(answer);
+              socket.emit("signal", {
+                peerId: peerIdRef.current,
+                signal: { sdp: pcRef.current.localDescription },
+              });
             }
-          } else if (signal.candidate) {
+          } else if (signal.candidate && pcRef.current) {
             try {
               await pcRef.current.addIceCandidate(
                 new RTCIceCandidate(signal.candidate)
               );
             } catch {
-              // ignore ICE races
+              /* ignore race */
             }
           }
         }
@@ -311,9 +249,7 @@ export default function Home() {
         teardownPeer();
         if (matchingRef.current) {
           setStatus("⚠️ Stranger left. ⏳ Finding the next partner…");
-          // requeue safely
-          socket.emit("leave");
-          setTimeout(() => matchingRef.current && socket.emit("join"), 120);
+          socket.emit("join");
         } else {
           setStatus("⚠️ Stranger left.");
         }
@@ -329,6 +265,7 @@ export default function Home() {
         pcRef.current?.close();
       } catch {}
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -341,9 +278,7 @@ export default function Home() {
 
       {/* Inline controls for desktop/tablet */}
       <div className="controls controls-inline">
-        <button onClick={onAction} disabled={actionDisabled}>
-          {actionLabel}
-        </button>
+        <button onClick={onAction}>{actionLabel}</button>
         <button onClick={stopMatching} disabled={!stopEnabled}>
           Stop
         </button>
@@ -355,9 +290,7 @@ export default function Home() {
           <video ref={remoteRef} autoPlay playsInline className="video" />
           {/* Overlay controls for mobile */}
           <div className="controls controls-overlay">
-            <button onClick={onAction} disabled={actionDisabled}>
-              {actionLabel}
-            </button>
+            <button onClick={onAction}>{actionLabel}</button>
             <button onClick={stopMatching} disabled={!stopEnabled}>
               Stop
             </button>
@@ -369,8 +302,7 @@ export default function Home() {
 
       <style jsx>{`
         .root {
-          font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica,
-            Arial, sans-serif;
+          font-family: system-ui, sans-serif;
           padding: 20px;
         }
         .status {
@@ -417,7 +349,7 @@ export default function Home() {
           padding: 10px 16px;
         }
 
-        /* Desktop/tablet: side-by-side videos, inline controls */
+        /* Desktop/tablet: side-by-side videos, inline controls; hide overlay */
         @media (min-width: 768px) {
           .videos {
             grid-template-columns: 1fr 1fr;
