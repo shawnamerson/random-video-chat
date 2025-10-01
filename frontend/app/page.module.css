@@ -64,15 +64,17 @@
 }
 
 .videos {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  align-items: start;
+  width: 100%;
+  height: calc(100vh - 200px); /* Account for header and controls */
 }
 
 .video {
   width: 100%;
-  max-width: 720px;
+  height: 100%;
+  object-fit: cover;
   background: #000;
   border-radius: 12px;
 }
@@ -80,13 +82,15 @@
 .remoteWrap {
   position: relative;
   width: 100%;
-  max-width: 720px;
+  height: 50%; /* Exactly 50% on mobile */
+  flex-shrink: 0;
 }
 
 .videoWrap {
   position: relative;
   width: 100%;
-  max-width: 720px;
+  height: 50%; /* Exactly 50% on mobile */
+  flex-shrink: 0;
 }
 
 .audioIndicator {
@@ -130,7 +134,14 @@
 
 @media (min-width: 768px) {
   .videos {
-    grid-template-columns: 1fr 1fr;
+    flex-direction: row;
+    height: calc(100vh - 180px);
+  }
+
+  .remoteWrap,
+  .videoWrap {
+    width: 50%; /* Equal width on desktop */
+    height: 100%; /* Full height of container */
   }
 
   .controlsInline {
