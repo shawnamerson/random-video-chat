@@ -11,7 +11,7 @@ export async function GET() {
     }
     const data = await r.json();
     return Response.json(data, { status: 200 });
-  } catch (e) {
+  } catch {
     return Response.json({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] }, { status: 200 });
   }
 }
