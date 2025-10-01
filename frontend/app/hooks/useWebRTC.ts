@@ -478,8 +478,9 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
         pcRef.current?.close();
       } catch {}
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    localVideoRef,
+    // localVideoRef and remoteVideoRef are refs - should NOT be dependencies
     loadIce,
     onStatusChange,
     handleSocketConnect,
