@@ -345,7 +345,51 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
 
     // Enumerate cameras after getting permission
     const devices = await navigator.mediaDevices.enumerateDevices();
-    const cameras = devices.filter(device => device.kind === 'videoinput');
+    let cameras = devices.filter(device => {
+      // Only include actual video input devices with labels
+      // Filter out empty labels (can happen with virtual cameras)
+      return device.kind === 'videoinput' && device.label && device.label.trim() !== '';
+    });
+
+    // On iOS, try to simplify to just front/back
+    // iPhone exposes multiple rear cameras (wide, ultra-wide, telephoto)
+    // We want to group them as just "front" and "back"
+    const hasFrontLabel = cameras.some(c =>
+      c.label.toLowerCase().includes('front') ||
+      c.label.toLowerCase().includes('user')
+    );
+    const hasBackLabel = cameras.some(c =>
+      c.label.toLowerCase().includes('back') ||
+      c.label.toLowerCase().includes('rear') ||
+      c.label.toLowerCase().includes('environment')
+    );
+
+    // If we have both front and back cameras, filter to just one of each
+    if (cameras.length > 2 && hasFrontLabel && hasBackLabel) {
+      const front = cameras.find(c =>
+        c.label.toLowerCase().includes('front') ||
+        c.label.toLowerCase().includes('user')
+      );
+      const back = cameras.find(c =>
+        (c.label.toLowerCase().includes('back') ||
+         c.label.toLowerCase().includes('rear') ||
+         c.label.toLowerCase().includes('environment')) &&
+        !c.label.toLowerCase().includes('ultra') &&
+        !c.label.toLowerCase().includes('telephoto')
+      ) || cameras.find(c =>
+        c.label.toLowerCase().includes('back') ||
+        c.label.toLowerCase().includes('rear') ||
+        c.label.toLowerCase().includes('environment')
+      );
+
+      if (front && back) {
+        cameras = [front, back];
+      }
+    }
+
+    // Log for debugging
+    console.log('Available cameras:', cameras.map(c => ({ id: c.deviceId, label: c.label })));
+
     setAvailableCameras(cameras);
 
     return stream;
