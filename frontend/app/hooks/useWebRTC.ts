@@ -625,8 +625,14 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
 
       socket.on("connect", handleSocketConnect);
       socket.on("disconnect", handleSocketDisconnect);
-      socket.on("connect_error", () => {
-        onStatusChange("⚠️ Connection issue. Retrying…");
+      socket.on("connect_error", (err) => {
+        // Check if it's a ban error
+        if (err.message === "banned") {
+          onStatusChange("🚫 You have been banned from this service.");
+          socketRef.current?.disconnect();
+        } else {
+          onStatusChange("⚠️ Connection issue. Retrying…");
+        }
       });
       socket.on("waiting", handleWaiting);
       socket.on("paired", handlePaired);
