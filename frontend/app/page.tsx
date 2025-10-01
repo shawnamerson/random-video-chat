@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback } from "react";
 import { useWebRTC } from "./hooks/useWebRTC";
+import { ReportModal } from "./components/ReportModal";
 import styles from "./page.module.css";
 
 export default function Home() {
@@ -9,6 +10,7 @@ export default function Home() {
   const remoteRef = useRef<HTMLVideoElement>(null);
 
   const [status, setStatus] = useState("Initializing…");
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   const handleStatusChange = useCallback((msg: string) => {
     setStatus(msg);
@@ -25,11 +27,23 @@ export default function Home() {
     nextStranger,
     stopMatching,
     switchCamera,
+    reportUser,
+    hasPeer,
   } = useWebRTC({
     localVideoRef: localRef,
     remoteVideoRef: remoteRef,
     onStatusChange: handleStatusChange,
   });
+
+  const handleReportClick = () => {
+    if (hasPeer) {
+      setIsReportModalOpen(true);
+    }
+  };
+
+  const handleReportSubmit = (reason: string) => {
+    reportUser(reason);
+  };
 
   const onAction = () => {
     if (!matchingActive) {
@@ -64,6 +78,14 @@ export default function Home() {
         <button onClick={onAction} disabled={mediaLoading}>
           {matchingActive ? "Next" : "Start"}
         </button>
+        <button
+          onClick={handleReportClick}
+          disabled={!hasPeer}
+          className={styles.reportBtn}
+          title="Report this user"
+        >
+          🚫 Report
+        </button>
         <button onClick={stopMatching} disabled={!matchingActive}>
           Stop
         </button>
@@ -91,6 +113,14 @@ export default function Home() {
           <div className={styles.controlsOverlay}>
             <button onClick={onAction} disabled={mediaLoading}>
               {matchingActive ? "Next" : "Start"}
+            </button>
+            <button
+              onClick={handleReportClick}
+              disabled={!hasPeer}
+              className={styles.reportBtn}
+              title="Report"
+            >
+              🚫
             </button>
             <button onClick={stopMatching} disabled={!matchingActive}>
               Stop
@@ -134,6 +164,13 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* Report Modal */}
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        onSubmit={handleReportSubmit}
+      />
     </main>
   );
 }

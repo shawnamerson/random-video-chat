@@ -316,6 +316,15 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
     }
   }, [teardownPeer, onStatusChange]);
 
+  const handleReportSubmitted = useCallback(() => {
+    onStatusChange("✅ Report submitted. Thank you for helping keep our community safe.");
+  }, [onStatusChange]);
+
+  const handleBanned = useCallback((data: { reason: string }) => {
+    onStatusChange(`🚫 You have been banned: ${data.reason}`);
+    socketRef.current?.disconnect();
+  }, [onStatusChange]);
+
   const handleSocketConnect = useCallback(() => {
     console.log("✅ socket connected", socketRef.current?.id);
 
@@ -509,6 +518,18 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
     onStatusChange("Stopped. Click Start when you're ready.");
   }, [teardownPeer, onStatusChange]);
 
+  const reportUser = useCallback((reason: string) => {
+    if (!peerIdRef.current) {
+      onStatusChange("❌ No active partner to report");
+      return;
+    }
+
+    socketRef.current?.emit("report", {
+      peerId: peerIdRef.current,
+      reason,
+    });
+  }, [onStatusChange]);
+
   // Initialize media and socket
   useEffect(() => {
     let cancelled = false;
@@ -611,6 +632,8 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
       socket.on("paired", handlePaired);
       socket.on("signal", handleSignal);
       socket.on("partner-disconnected", handlePartnerDisconnected);
+      socket.on("report-submitted", handleReportSubmitted);
+      socket.on("banned", handleBanned);
     })();
 
     return () => {
@@ -660,5 +683,7 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
     nextStranger,
     stopMatching,
     switchCamera,
+    reportUser,
+    hasPeer: !!peerIdRef.current,
   };
 }

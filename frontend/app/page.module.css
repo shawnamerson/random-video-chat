@@ -211,3 +211,18 @@
 .controlsOverlay button:active:not(:disabled) {
   transform: scale(0.98);
 }
+
+/* Report button styles */
+.reportBtn {
+  background: #dc3545 !important;
+  color: white !important;
+}
+
+.reportBtn:hover:not(:disabled) {
+  background: #c82333 !important;
+}
+
+.reportBtn:disabled {
+  background: #ccc !important;
+  opacity: 0.6;
+}
