@@ -32,6 +32,8 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
   const [pcConfig, setPcConfig] = useState<IceConfig>({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
   });
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [currentCameraIndex, setCurrentCameraIndex] = useState(0);
 
   // Setup remote audio level monitoring
   const setupRemoteAudioAnalyzer = useCallback((stream: MediaStream) => {
@@ -332,6 +334,105 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
     }
   }, [teardownPeer, onStatusChange]);
 
+  // Get user media with specific camera
+  const getUserMediaWithCamera = useCallback(async (deviceId?: string) => {
+    const constraints: MediaStreamConstraints = {
+      video: deviceId ? { deviceId: { exact: deviceId } } : true,
+      audio: true,
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+    // Enumerate cameras after getting permission
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter(device => device.kind === 'videoinput');
+    setAvailableCameras(cameras);
+
+    return stream;
+  }, []);
+
+  // Switch camera
+  const switchCamera = useCallback(async () => {
+    if (availableCameras.length <= 1) return;
+
+    try {
+      // Stop current stream
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+
+      // Stop local audio analyzer
+      if (localAudioCleanupRef.current) {
+        localAudioCleanupRef.current();
+      }
+      if (localAudioContextRef.current) {
+        try {
+          localAudioContextRef.current.close();
+        } catch {}
+      }
+
+      // Get next camera
+      const nextIndex = (currentCameraIndex + 1) % availableCameras.length;
+      setCurrentCameraIndex(nextIndex);
+      const nextCamera = availableCameras[nextIndex];
+
+      // Get new stream with selected camera
+      const stream = await getUserMediaWithCamera(nextCamera.deviceId);
+      streamRef.current = stream;
+
+      // Update local video
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        await localVideoRef.current.play().catch(() => {});
+      }
+
+      // Setup local audio analyzer
+      try {
+        const audioContext = new AudioContext();
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+
+        localAudioContextRef.current = audioContext;
+        localAnalyserRef.current = analyser;
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        let animationId: number;
+        const updateLevel = () => {
+          if (!localAnalyserRef.current) return;
+          try {
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            setLocalAudioLevel(Math.min(100, (average / 255) * 100));
+            animationId = requestAnimationFrame(updateLevel);
+          } catch {
+            return;
+          }
+        };
+        updateLevel();
+
+        localAudioCleanupRef.current = () => {
+          if (animationId) cancelAnimationFrame(animationId);
+        };
+      } catch (e) {
+        console.error("Error setting up audio analyzer:", e);
+      }
+
+      // Update peer connection if we're in a call
+      if (pcRef.current && matchingRef.current) {
+        const videoSender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
+        const newVideoTrack = stream.getVideoTracks()[0];
+        if (videoSender && newVideoTrack) {
+          await videoSender.replaceTrack(newVideoTrack);
+        }
+      }
+    } catch (e) {
+      console.error("Error switching camera:", e);
+      onStatusChange("❌ Failed to switch camera");
+    }
+  }, [availableCameras, currentCameraIndex, getUserMediaWithCamera, localVideoRef, onStatusChange]);
+
   // Actions
   const startMatching = useCallback(() => {
     // Persist state
@@ -378,10 +479,7 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
 
       // Get user media
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
+        const stream = await getUserMediaWithCamera();
         streamRef.current = stream;
 
         if (localVideoRef.current) {
@@ -513,8 +611,10 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
     connectionStats,
     localAudioLevel,
     remoteAudioLevel,
+    availableCameras,
     startMatching,
     nextStranger,
     stopMatching,
+    switchCamera,
   };
 }

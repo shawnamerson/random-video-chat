@@ -20,9 +20,11 @@ export default function Home() {
     connectionStats,
     localAudioLevel,
     remoteAudioLevel,
+    availableCameras,
     startMatching,
     nextStranger,
     stopMatching,
+    switchCamera,
   } = useWebRTC({
     localVideoRef: localRef,
     remoteVideoRef: remoteRef,
@@ -110,6 +112,18 @@ export default function Home() {
                 />
               </div>
             </div>
+          )}
+
+          {/* Camera flip button */}
+          {availableCameras.length > 1 && !mediaLoading && (
+            <button
+              className={styles.flipButton}
+              onClick={switchCamera}
+              title="Switch camera"
+              aria-label="Switch camera"
+            >
+              🔄
+            </button>
           )}
 
           {/* Loading overlay */}
