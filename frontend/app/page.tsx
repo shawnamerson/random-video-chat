@@ -5,7 +5,6 @@ import { useWebRTC } from "./hooks/useWebRTC";
 import styles from "./page.module.css";
 
 export default function Home() {
-  const statusRef = useRef<HTMLDivElement>(null);
   const localRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
 
@@ -13,7 +12,6 @@ export default function Home() {
 
   const handleStatusChange = useCallback((msg: string) => {
     setStatus(msg);
-    if (statusRef.current) statusRef.current.textContent = msg;
   }, []);
 
   const {
@@ -54,7 +52,7 @@ export default function Home() {
     <main className={styles.root}>
       <h1>Random Video Chat</h1>
 
-      <div id="status" ref={statusRef} className={styles.status}>
+      <div id="status" className={styles.status}>
         {status}
         {getQualityLabel()}
       </div>
