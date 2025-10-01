@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(timeout 30 npm run lint)",
+      "Bash(npm run lint)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nRefactor frontend with comprehensive improvements\n\nMajor improvements:\n- Extracted WebRTC logic into custom useWebRTC hook for better maintainability\n- Added TypeScript types and validation for all WebRTC signals\n- Implemented connection quality monitoring with real-time stats\n- Added audio level indicators for both local and remote streams\n- Converted all files to TypeScript\n- Extracted inline styles to CSS modules\n\nFeatures:\n- Connection quality indicator (excellent/good/poor/disconnected)\n- Real-time audio meters for both participants\n- Loading states for media permissions\n- Persistent matching state via localStorage (survives page refresh)\n- Socket reconnection with exponential backoff\n- \"Next\" button to skip to next stranger\n\nSecurity:\n- Added Content Security Policy headers via middleware\n- Client-side signal validation to prevent malformed messages\n- Security headers (X-Frame-Options, CSP, Permissions-Policy)\n\nCode quality:\n- Proper error handling and memory leak fixes\n- Clean separation of concerns (hooks, types, utils)\n- All ESLint warnings resolved\n- Production build optimized and tested\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Read(//c/Users/shawn/**)",
+      "Bash(node:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd ICE endpoint and update CORS for Vercel frontend\n\nFeatures:\n- Added /ice endpoint returning STUN/TURN server configuration\n- Supports optional TURN server via environment variables\n- Updated CORS to allow Vercel production URL (random-video-chat-rose.vercel.app)\n- Added .env.example documenting all configuration options\n\nConfiguration:\n- Default STUN servers: Google public STUN\n- Optional TURN: Set TURN_URL, TURN_USERNAME, TURN_CREDENTIAL\n- CORS: Configurable via ALLOWED_ORIGINS env var\n\nThis makes the backend fully compatible with the refactored frontend.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(npm run dev:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

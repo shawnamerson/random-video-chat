@@ -478,19 +478,10 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
         pcRef.current?.close();
       } catch {}
     };
+    // This effect should only run once on mount
+    // All callbacks are wrapped in useCallback with proper dependencies
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    // localVideoRef and remoteVideoRef are refs - should NOT be dependencies
-    loadIce,
-    onStatusChange,
-    handleSocketConnect,
-    handleSocketDisconnect,
-    handleWaiting,
-    handlePaired,
-    handleSignal,
-    handlePartnerDisconnected,
-    startMatching,
-  ]);
+  }, []);
 
   return {
     matchingActive,

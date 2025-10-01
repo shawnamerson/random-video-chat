@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import { useWebRTC } from "./hooks/useWebRTC";
 import styles from "./page.module.css";
 
@@ -10,6 +10,11 @@ export default function Home() {
   const remoteRef = useRef<HTMLVideoElement>(null);
 
   const [status, setStatus] = useState("Initializing…");
+
+  const handleStatusChange = useCallback((msg: string) => {
+    setStatus(msg);
+    if (statusRef.current) statusRef.current.textContent = msg;
+  }, []);
 
   const {
     matchingActive,
@@ -23,10 +28,7 @@ export default function Home() {
   } = useWebRTC({
     localVideoRef: localRef,
     remoteVideoRef: remoteRef,
-    onStatusChange: (msg) => {
-      setStatus(msg);
-      if (statusRef.current) statusRef.current.textContent = msg;
-    },
+    onStatusChange: handleStatusChange,
   });
 
   const onAction = () => {
