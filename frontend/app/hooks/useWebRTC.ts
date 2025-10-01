@@ -26,6 +26,8 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
   const remoteAudioContextRef = useRef<AudioContext | null>(null);
   const localAnalyserRef = useRef<AnalyserNode | null>(null);
   const remoteAnalyserRef = useRef<AnalyserNode | null>(null);
+  const remoteAudioCleanupRef = useRef<(() => void) | null>(null);
+  const localAudioCleanupRef = useRef<(() => void) | null>(null);
 
   const [pcConfig, setPcConfig] = useState<IceConfig>({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -44,14 +46,27 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
       remoteAnalyserRef.current = analyser;
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      let animationId: number;
       const updateLevel = () => {
         if (!remoteAnalyserRef.current) return;
-        analyser.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-        setRemoteAudioLevel(Math.min(100, (average / 255) * 100));
-        requestAnimationFrame(updateLevel);
+        try {
+          analyser.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          setRemoteAudioLevel(Math.min(100, (average / 255) * 100));
+          animationId = requestAnimationFrame(updateLevel);
+        } catch (e) {
+          // Analyser might be closed, stop the loop
+          return;
+        }
       };
       updateLevel();
+
+      // Return cleanup function
+      return () => {
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+        }
+      };
     } catch (e) {
       console.error("Error setting up remote audio analyzer:", e);
     }
@@ -124,6 +139,10 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
       clearInterval(statsIntervalRef.current);
       statsIntervalRef.current = null;
     }
+    if (remoteAudioCleanupRef.current) {
+      remoteAudioCleanupRef.current();
+      remoteAudioCleanupRef.current = null;
+    }
     if (remoteAudioContextRef.current) {
       try {
         remoteAudioContextRef.current.close();
@@ -160,8 +179,11 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
           remoteVideoRef.current.srcObject = stream;
           remoteVideoRef.current.play?.().catch(() => {});
 
-          // Setup remote audio analyzer
-          setupRemoteAudioAnalyzer(stream);
+          // Setup remote audio analyzer and store cleanup function
+          const cleanup = setupRemoteAudioAnalyzer(stream);
+          if (cleanup) {
+            remoteAudioCleanupRef.current = cleanup;
+          }
         }
       };
 
@@ -379,14 +401,27 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
             localAnalyserRef.current = analyser;
 
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            let animationId: number;
             const updateLevel = () => {
               if (!localAnalyserRef.current) return;
-              analyser.getByteFrequencyData(dataArray);
-              const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-              setLocalAudioLevel(Math.min(100, (average / 255) * 100));
-              requestAnimationFrame(updateLevel);
+              try {
+                analyser.getByteFrequencyData(dataArray);
+                const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                setLocalAudioLevel(Math.min(100, (average / 255) * 100));
+                animationId = requestAnimationFrame(updateLevel);
+              } catch (e) {
+                // Analyser might be closed, stop the loop
+                return;
+              }
             };
             updateLevel();
+
+            // Store cleanup function
+            localAudioCleanupRef.current = () => {
+              if (animationId) {
+                cancelAnimationFrame(animationId);
+              }
+            };
           } catch (e) {
             console.error("Error setting up local audio analyzer:", e);
           }
@@ -458,10 +493,16 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
       if (statsIntervalRef.current) {
         clearInterval(statsIntervalRef.current);
       }
+      if (localAudioCleanupRef.current) {
+        localAudioCleanupRef.current();
+      }
       if (localAudioContextRef.current) {
         try {
           localAudioContextRef.current.close();
         } catch {}
+      }
+      if (remoteAudioCleanupRef.current) {
+        remoteAudioCleanupRef.current();
       }
       if (remoteAudioContextRef.current) {
         try {
