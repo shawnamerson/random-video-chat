@@ -368,6 +368,11 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
   useEffect(() => {
     let cancelled = false;
 
+    // Clear any stale localStorage matching state from previous sessions
+    try {
+      localStorage.removeItem('matchingActive');
+    } catch {}
+
     (async () => {
       await loadIce();
 
@@ -426,17 +431,7 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
             console.error("Error setting up local audio analyzer:", e);
           }
 
-          // Check if we were matching before reload
-          try {
-            const wasMatching = localStorage.getItem('matchingActive') === 'true';
-            if (wasMatching) {
-              onStatusChange("Ready. Restoring previous session…");
-            } else {
-              onStatusChange("Ready. Click Start to connect with a stranger.");
-            }
-          } catch {
-            onStatusChange("Ready. Click Start to connect with a stranger.");
-          }
+          onStatusChange("Ready. Click Start to connect with a stranger.");
         }
       } catch (e) {
         setMediaLoading(false);
@@ -474,18 +469,6 @@ export function useWebRTC({ localVideoRef, remoteVideoRef, onStatusChange }: Use
       socket.on("paired", handlePaired);
       socket.on("signal", handleSignal);
       socket.on("partner-disconnected", handlePartnerDisconnected);
-
-      // Auto-restart matching if we were matching before reload
-      try {
-        const wasMatching = localStorage.getItem('matchingActive') === 'true';
-        if (wasMatching && !cancelled) {
-          setTimeout(() => {
-            if (!cancelled) {
-              startMatching();
-            }
-          }, 500);
-        }
-      } catch {}
     })();
 
     return () => {
